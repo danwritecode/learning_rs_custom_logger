@@ -1,57 +1,28 @@
+pub mod providers;
+
+pub use crate::providers::prelude::*;
+use std::sync::Arc;
 use log::{Log, SetLoggerError};
+use anyhow::Result;
+use serde::Serialize;
+use async_trait::async_trait;
+use crossbeam::channel;
+use tokio::runtime::Runtime;
 
-// Providers
-pub trait LogProvider {
-    fn send_log(&self, message: &log::Record);
-}
 
-pub struct AxiomProvider {
-    auth_token: String
-}
 
-impl AxiomProvider {
-    pub fn new() -> AxiomProvider {
-        let auth_token = "".to_string();
-        AxiomProvider {
-            auth_token
-        }
-    }
-}
-
-impl LogProvider for AxiomProvider {
-    fn send_log(&self, message: &log::Record) {
-        println!("Dan Logger logged for Axiom: {:?}", message);
-    }
-}
-
-pub struct DbProvider {
-    db_conn: String
-}
-
-impl DbProvider {
-    pub fn new() -> DbProvider {
-        let db_conn = "".to_string();
-        DbProvider {
-            db_conn
-        }
-    }
-}
-
-impl LogProvider for DbProvider {
-    fn send_log(&self, message: &log::Record) {
-        println!("Dan Logger logged for DB: {:?}", message);
-    }
+#[async_trait]
+pub trait LogProvider: Send + Sync {
+    async fn send_log(&self, message: AnywhereLogRecord);
 }
 
 
-
-// Logger
 pub struct DanLogger {
-    provider: Box<dyn LogProvider>
+    provider: Arc<dyn LogProvider>
 }
 
 impl DanLogger {
-    pub fn new(provider: Box<dyn LogProvider>) -> Self {
+    pub fn new(provider: Arc<dyn LogProvider>) -> Self {
         DanLogger {
             provider
         }
@@ -64,6 +35,13 @@ impl DanLogger {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct AnywhereLogRecord {
+    level: String,
+    message: String,
+    file: String,
+    line: Option<u32>
+}
 
 unsafe impl Sync for DanLogger {}
 unsafe impl Send for DanLogger {}
@@ -74,7 +52,28 @@ impl Log for DanLogger {
     }
 
     fn log(&self, record: &log::Record) {
-        self.provider.send_log(&record);
+        let anywhere_log = AnywhereLogRecord {
+            level: record.level().to_string(),
+            message: record.args().to_string(),
+            file: record.file().unwrap().to_string(),
+            line: record.line()
+        };
+        
+        let rt = Runtime::new().unwrap();
+        let handle = rt.handle();
+
+        let (tx, rx) = channel::bounded(1);
+        let provider = self.provider.clone();
+
+        handle.spawn(async move {
+            tx.send(provider.send_log(anywhere_log).await).unwrap();
+        });
+
+        let rec = rx.recv();
+        if let Err(e) = rec {
+            eprintln!("Error encountered when receiving log thread, error: {}", e);
+        }
+
     }
 
     fn flush(&self) {
