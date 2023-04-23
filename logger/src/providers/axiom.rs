@@ -3,8 +3,10 @@ use reqwest::header;
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 
-use crate::{LogProvider, AnywhereLogRecord};
+use crate::{LogProvider, LogAnywhereRecord};
 use async_trait::async_trait;
+
+use std::sync::{ Arc, Mutex };
 
 pub struct AxiomProvider<'a> {
     auth_token: &'a str,
@@ -22,8 +24,8 @@ impl<'a> AxiomProvider<'a> {
 
 #[async_trait]
 impl<'a> LogProvider for AxiomProvider<'a> {
-    async fn send_log(&self, message:AnywhereLogRecord) {
-        println!("Dan Logger logged for Axiom: {:?}", message);
+    async fn send_log(&self, messages: Vec<LogAnywhereRecord>) {
+        println!("Logged for Axiom: {:?}", messages);
 
         let mut headers = header::HeaderMap::new();
         headers.insert(AUTHORIZATION, format!("Bearer {}", &self.auth_token).parse().unwrap());
@@ -33,7 +35,7 @@ impl<'a> LogProvider for AxiomProvider<'a> {
         let url = "https://api.axiom.co/v1/datasets/worker_logs/ingest";
         let res = client.post(url)
             .headers(headers)
-            .json(&vec![message])
+            .json(&messages)
             .send()
             .await
             .unwrap();
@@ -41,4 +43,3 @@ impl<'a> LogProvider for AxiomProvider<'a> {
         println!("res: {:?}", res.text().await.unwrap());
     }
 }
-

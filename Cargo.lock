@@ -195,6 +195,7 @@ version = "0.1.0"
 dependencies = [
  "log",
  "logger",
+ "tokio",
 ]
 
 [[package]]

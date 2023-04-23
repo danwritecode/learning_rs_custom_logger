@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 log = "0.4"
-
+tokio = { version = "1.14.0", features = ["full"] }
 logger = { path = "../logger" }
